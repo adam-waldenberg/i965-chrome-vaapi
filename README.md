@@ -40,6 +40,23 @@ Point Chrome at the patched driver with two environment variables:
 Check `chrome://media-internals`: the video decoder should be
 `VaapiVideoDecoder`.
 
+To make it permanent, prefix the `Exec=` lines of the Chrome launcher
+(`~/.local/share/applications/google-chrome.desktop`) with
+`env LIBVA_DRIVERS_PATH=... LIBVA_DRIVER_NAME=i965`. Chrome must be fully
+quit and started again for it to take effect.
+
+## Result
+
+1080p30 H.264 on an i7-4600U (Haswell), Chrome 157, X11. CPU use of the
+threads that handle the video, as a share of one core:
+
+| Thread                 | Stock driver | Patched driver |
+|------------------------|--------------|----------------|
+| Renderer `Media`       | 81%          | 3%             |
+| GPU process (total)    | 33%          | about 16%      |
+
+Rebuild after a libva or libdrm upgrade that changes the sonames.
+
 ## Tools
 
 - `tools/vpp_formats.py` lists the pixel formats the driver offers for the
