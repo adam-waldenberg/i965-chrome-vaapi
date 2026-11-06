@@ -1,0 +1,68 @@
+Subject: Allocate surface storage when exporting before use
+
+Surface storage is allocated on first use, so vaExportSurfaceHandle
+fails with an invalid surface error for a surface nothing has been
+decoded or rendered into yet. Chrome exports its frame pool surfaces
+before that point.
+
+Allocate the buffer when it is missing: NV12 for 4:2:0 surfaces, which
+is what the decoders allocate later, and a linear BGRA buffer for RGB32
+surfaces. The RGB32 buffer is reported with the ARGB fourcc, the name
+Chrome expects for that layout.
+
+--- a/src/i965_drv_video.c
++++ b/src/i965_drv_video.c
+@@ -2000,6 +2000,7 @@
+ 
+         obj_surface->wrapper_surface = VA_INVALID_ID;
+         obj_surface->exported_primefd = -1;
++        obj_surface->export_as_argb = 0;
+ 
+         switch (memory_type) {
+         case I965_SURFACE_MEM_NATIVE:
+@@ -6811,6 +6812,25 @@
+     int composite_object =
+         flags & VA_EXPORT_SURFACE_COMPOSED_LAYERS;
+ 
++    /* Surface storage is allocated on first use. Clients that export a
++     * surface before using it get a buffer in the usual format for its
++     * RT format: NV12 for 4:2:0 (what the decoders allocate later), and
++     * a linear BGRA buffer for RGB32, reported as ARGB (same layout). */
++    if (obj_surface && !obj_surface->bo) {
++        if (obj_surface->expected_format == VA_RT_FORMAT_YUV420) {
++            if (i965_surface_native_memory(ctx, obj_surface,
++                                           VA_RT_FORMAT_YUV420,
++                                           VA_FOURCC_NV12) != VA_STATUS_SUCCESS)
++                return VA_STATUS_ERROR_ALLOCATION_FAILED;
++        } else if (obj_surface->expected_format == VA_RT_FORMAT_RGB32) {
++            if (i965_check_alloc_surface_bo(ctx, obj_surface, 0,
++                                            VA_FOURCC_BGRA,
++                                            SUBSAMPLE_RGBX) != VA_STATUS_SUCCESS)
++                return VA_STATUS_ERROR_ALLOCATION_FAILED;
++            obj_surface->export_as_argb = 1;
++        }
++    }
++
+     if (!obj_surface || !obj_surface->bo)
+         return VA_STATUS_ERROR_INVALID_SURFACE;
+ 
+@@ -6853,7 +6873,8 @@
+ 
+     desc = descriptor;
+ 
+-    desc->fourcc = obj_surface->fourcc;
++    desc->fourcc = obj_surface->export_as_argb ? VA_FOURCC_ARGB
++                   : obj_surface->fourcc;
+     desc->width  = obj_surface->orig_width;
+     desc->height = obj_surface->orig_height;
+ 
+--- a/src/i965_drv_video.h
++++ b/src/i965_drv_video.h
+@@ -394,6 +394,7 @@
+     VAGenericID wrapper_surface;
+ 
+     int exported_primefd;
++    int export_as_argb; /* buffer was allocated as BGRA by an export request */
+ };
+ 
+ struct object_buffer {
