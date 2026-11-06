@@ -1,0 +1,28 @@
+Subject: Advertise ARGB as a video processing output format
+
+Chrome converts decoded NV12 frames to ARGB through the video processing
+entry point and only accepts VA_FOURCC_ARGB as the output format. The
+driver lists RGBA, RGBX, BGRA and BGRX but not ARGB, so Chrome finds no
+usable output format and drops back to software decoding.
+
+ARGB has the same memory layout as BGRA, which the driver already
+renders to, so list it for Haswell.
+
+--- a/src/i965_drv_video.c
++++ b/src/i965_drv_video.c
+@@ -6286,6 +6286,15 @@
+                 attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE | VA_SURFACE_ATTRIB_SETTABLE;
+                 attribs[i].value.value.i = VA_FOURCC_YV16;
+                 i++;
++
++                /* ARGB is the same memory layout as BGRA (B, G, R, A bytes).
++                 * Clients that only recognise the ARGB name look for it in
++                 * the VPP output list. */
++                attribs[i].type = VASurfaceAttribPixelFormat;
++                attribs[i].value.type = VAGenericValueTypeInteger;
++                attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE | VA_SURFACE_ATTRIB_SETTABLE;
++                attribs[i].value.value.i = VA_FOURCC_ARGB;
++                i++;
+             }
+         }
+     } else if (IS_GEN8(i965->intel.device_info) ||
